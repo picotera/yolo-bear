@@ -2,14 +2,14 @@ import logging
 import sys
 from ConfigParser import SafeConfigParser
 
-def getLogger(level, name='pygoogle'):
+def getLogger(level, file_level = logging.DEBUG, name='pygoogle'):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(level)
     file_handler = logging.FileHandler('%s.log' %name)
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(file_level)
     
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     

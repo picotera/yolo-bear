@@ -21,6 +21,8 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML
 
 GOOGLE_DOMAINS = ['www.google.com','www.google.ad','www.google.ae','www.google.com.af','www.google.com.ag','www.google.com.ai','www.google.am','www.google.co.ao','www.google.com.ar','www.google.as','www.google.at','www.google.com.au','www.google.az','www.google.ba','www.google.com.bd','www.google.be','www.google.bf','www.google.bg','www.google.com.bh','www.google.bi','www.google.bj','www.google.com.bn','www.google.com.bo','www.google.com.br','www.google.bs','www.google.co.bw','www.google.by','www.google.com.bz','www.google.ca','www.google.cd','www.google.cf','www.google.cg','www.google.ch','www.google.ci','www.google.co.ck','www.google.cl','www.google.cm','www.google.cn','www.google.com.co','www.google.co.cr','www.google.com.cu','www.google.cv','www.google.com.cy','www.google.cz','www.google.de','www.google.dj','www.google.dk','www.google.dm','www.google.com.do','www.google.dz','www.google.com.ec','www.google.ee','www.google.com.eg','www.google.es','www.google.com.et','www.google.fi','www.google.com.fj','www.google.fm','www.google.fr','www.google.ga','www.google.ge','www.google.gg','www.google.com.gh','www.google.com.gi','www.google.gl','www.google.gm','www.google.gp','www.google.gr','www.google.com.gt','www.google.gy','www.google.com.hk','www.google.hn','www.google.hr','www.google.ht','www.google.hu','www.google.co.id','www.google.ie','www.google.co.il','www.google.im','www.google.co.in','www.google.iq','www.google.is','www.google.it','www.google.je','www.google.com.jm','www.google.jo','www.google.co.jp','www.google.co.ke','www.google.com.kh','www.google.ki','www.google.kg','www.google.co.kr','www.google.com.kw','www.google.kz','www.google.la','www.google.com.lb','www.google.li','www.google.lk','www.google.co.ls','www.google.lt','www.google.lu','www.google.lv','www.google.com.ly','www.google.co.ma','www.google.md','www.google.me','www.google.mg','www.google.mk','www.google.ml','www.google.mn','www.google.ms','www.google.com.mt','www.google.mu','www.google.mv','www.google.mw','www.google.com.mx','www.google.com.my','www.google.co.mz','www.google.com.na','www.google.com.nf','www.google.com.ng','www.google.com.ni','www.google.ne','www.google.nl','www.google.no','www.google.com.np','www.google.nr','www.google.nu','www.google.co.nz','www.google.com.om','www.google.com.pa','www.google.com.pe','www.google.com.ph','www.google.com.pk','www.google.pl','www.google.pn','www.google.com.pr','www.google.ps','www.google.pt','www.google.com.py','www.google.com.qa','www.google.ro','www.google.ru','www.google.rw','www.google.com.sa','www.google.com.sb','www.google.sc','www.google.se','www.google.com.sg','www.google.sh','www.google.si','www.google.sk','www.google.com.sl','www.google.sn','www.google.so','www.google.sm','www.google.st','www.google.com.sv','www.google.td','www.google.tg','www.google.co.th','www.google.com.tj','www.google.tk','www.google.tl','www.google.tm','www.google.tn','www.google.to','www.google.com.tr','www.google.tt','www.google.com.tw','www.google.co.tz','www.google.com.ua','www.google.co.ug','www.google.co.uk','www.google.com.uy','www.google.co.uz','www.google.com.vc','www.google.co.ve','www.google.vg','www.google.co.vi','www.google.com.vn','www.google.vu','www.google.ws','www.google.rs','www.google.co.za','www.google.co.zm','www.google.co.zw','www.google.cat','www.google.xxx']
 
+#GOOGLE_DOMAINS = ['www.google.com.ar']
+
 SUBNET = '10.0.0.'
 
 def FetchData(self, url, g_match):
@@ -66,31 +68,45 @@ class GoogleParser(object):
             #raw_input('Press any key...')
             #os.system('cls')            
             try:
-                url = g_result.a['href']
-                #res = g_result.find_all('a')
-                '''
+                link = g_result.a
+                # Some domains use it I guess
+                if link.has_attr('data-href'):
+                    url = g_result.a['data-href']
+                else:
+                    url = g_result.a['href']
+                # link to another search, images or somethin
+                if url.find('/search') == 0:                    
+                    continue
                 try:
-                    title = g_result.a.span.get_text()
-                    print 'Title: ' + title
+                    span = link.span
+                    if span != None:
+                        title = span.get_text()
+                    else:
+                        title = link.get_text()
                 # These are elements that we don't need
-                except Exception, e:
+                except (Exception, AttributeError) as e:
+                    self.logger.error("Can't find text: \n%s\n%s" %(g_result, link))
                     continue
-                try:                    
-                    match = g_result.find(class_='st').find_all('span')[-1].get_text().replace(u'\xa0', u'')
-                    match = match.strip('.').strip()
-                    print 'Match: ' + match
-                except Exception, e:
+                try:
+                    st = g_result.find(class_='st')
+                    inner_spans = st.find_all('span')
+                    if len(inner_spans) == 0:
+                        match = st.get_text()
+                    else:
+                        match = inner_spans[-1].get_text()
+                    match = match.replace(u'\xa0', u'').strip('.').strip()
+                except (Exception, AttributeError) as e:
+                    self.logger.error("Can't find match: \n%s" %g_result)
                     continue
-                '''
-                result = {'url': url}
-                '''
+                
+                result = {'url': url,
                           'title': title,
                           'match': match}
-                '''
-                print 'Results: %s' %result
+                #print 'Results: %s' %result
                 results.append(result)
                 
             except Exception, e:
+                print 'OUter exception..'
                 self.logger.exception(traceback.format_exc())
         
         return results    
@@ -102,8 +118,8 @@ class Query(object):
         self.query = query
         self.handler = handler # Where to send the results
         
-    def SendResults(self, results):
-        self.handler.AddResults(self.query, results)
+    def SendResults(self, site, results):
+        self.handler.AddResults(self.query, site, results)
         
     def __str__(self):
         return self.query
@@ -117,12 +133,12 @@ class SearchHandler(object):
         self.filename = filename
         self.results = []
         
-    def AddResults(self, query, results):
-        self.results.append((query, results))
+    def AddResults(self, query, site, results):
+        self.results.append((query, site, results))
         self.count += 1
         
         #print results
-        self.logger.info('Got query "%s" result. %s of %s' %(query, self.count, self.query_count))
+        self.logger.info('Got query "%s" result from %s. %s of %s' %(query, site, self.count, self.query_count))
         if self.count == self.query_count:
             self.SaveResults()
     
@@ -130,8 +146,8 @@ class SearchHandler(object):
         f = open(self.filename, 'w')
         
         self.logger.info('Saving query results to file: %s' %self.filename)
-        for query, result in self.results:
-            f.write(query + '\n')
+        for query, site, result in self.results:
+            f.write('%s site %s:\n' %(query, site))
             for page in result:
                 f.write('\t' + str(page) + '\n')
 
@@ -166,36 +182,41 @@ class NormalQuery(threading.Thread):
         while True:
             q_time, query = self.queries.get()
             
-            results = []
-            for page in range(0, self.pages):
+            try:
+                results = []
+                for page in range(0, self.pages):
 
-                args = {'q' : query,
-                        }
-                self.logger.debug('Search: "%s" page# : %s'%(query, page))
-                encoded_query = urllib.urlencode(args)
-                
-                last_query = time.time()
-                search_results = self.s.get(NORMAL_URL %(self.site, encoded_query), verify=False)#, headers = {'cookie': self.cookie})
-                if search_results.status_code != 200:
-                    self.queries.put((q_time, query))
-                    if search_results.status_code == 503:
-                        self.logger.error('Bot detection %s, terminating' %(search_results.reason))
-                        return
-                    else:
-                        self.logger.error('Unknown error %s: %s, terminating' %(search_results.status_code, search_results.reason))
-                        return
-                
-                results.extend(self.parser.Parse(search_results.text))
-                #results.extend(('weehee',))
-                
-                # sleep the remaining time before the next query
-                sleep_time = last_query + self.config.sleep_time - time.time()
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-                
-            query.SendResults(results)
-            self.queries.task_done()
-        
+                    args = {'q' : query,
+                            }
+                    self.logger.debug('Search: "%s" page# : %s'%(query, page))
+                    encoded_query = urllib.urlencode(args)
+                    
+                    last_query = time.time()
+                    search_results = self.s.get(NORMAL_URL %(self.site, encoded_query), verify=False)#, headers = {'cookie': self.cookie})
+                    if search_results.status_code != 200:
+                        self.queries.put((q_time, query))
+                        if search_results.status_code == 503:
+                            self.logger.error('Bot detection %s, terminating' %(search_results.reason))
+                            return
+                        else:
+                            self.logger.error('Unknown error %s: %s, terminating' %(search_results.status_code, search_results.reason))
+                            return
+                    
+                    results.extend(self.parser.Parse(search_results.text))
+                    #results.extend(('weehee',))
+                    
+                    # sleep the remaining time before the next query
+                    sleep_time = last_query + self.config.sleep_time - time.time()
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    
+                query.SendResults(self.site, results)
+                self.queries.task_done()
+            except Exception, e:
+                print 'Oh noes'
+                self.logger.exception(traceback.format_exc())
+                self.queries.put((q_time, query))
+                return
                 
 class GoogleSearcher(object):
     
@@ -214,6 +235,7 @@ class GoogleSearcher(object):
         #self.ajax_thread.start()
         
         thread_count = min(self.config.max_threads, len(GOOGLE_DOMAINS))
+        print thread_count
         self.threads = []
         for i in xrange(thread_count):
             thread = NormalQuery(self.logger, self.config, self.queries, GOOGLE_DOMAINS[i], self.parser)
@@ -241,8 +263,7 @@ class GoogleSearcher(object):
         
 def main():
     searcher = GoogleSearcher(helper.getLogger(logging.INFO))
-    searcher.Search(('kobe bryant','bob marley','steven hawking',))
-    searcher.Search(('mush ben ari','TEVA','nlp',))
+    searcher.Search(('kobe bryant','edward elric'))
     
     
 if __name__ == '__main__':
