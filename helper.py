@@ -1,14 +1,18 @@
 import logging
+import logging.handlers
 import sys
 from ConfigParser import SafeConfigParser
 
-def getLogger(level, file_level = logging.DEBUG, name='pygoogle'):
+MAX_LOG_SIZE = 10 * 1024 * 1024 # 50MB
+BACKUP_COUNT = 5
+
+def getLogger(level, file_level = logging.DEBUG, name='pygoogle', max_size = MAX_LOG_SIZE, backup_count = BACKUP_COUNT):
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
     
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
-    file_handler = logging.FileHandler('%s.log' %name)
+    file_handler = logging.handlers.RotatingFileHandler('%s.log' %name, mode='a', maxBytes=max_size, backupCount=backup_count, encoding=None, delay=0)
     file_handler.setLevel(file_level)
     
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -21,18 +25,20 @@ def getLogger(level, file_level = logging.DEBUG, name='pygoogle'):
     
     return logger
         
-
 class Config(object):
     '''Read a user configuration file, store values in instance variables'''
 
     def __init__(self,f='settings.ini'):
         self.file = f
         self.parser = SafeConfigParser()
-        self.updateAll()
+        self.parser.read(self.file)
+        
+        self.updateRabbit()
+        self.updateAll()        
         
     def updateAll(self):
         '''Update and store all user settings'''
-        self.parser.read(self.file)
+        
         
         self.max_threads = self.parser.getint('MAIN','max_threads')
         
@@ -47,3 +53,13 @@ class Config(object):
         
         self.result_size = self.parser.getint('QUERY', 'result_size')
         self.sleep_time = self.parser.getint('QUERY', 'sleep_time')
+        
+    def updateRabbit(self):
+        self.rabbit_server = self.parser.get('RABBIT','server')
+        self.rabbit_user = self.parser.get('RABBIT','user')
+        self.rabbit_password = self.parser.get('RABBIT','password')
+        self.rabbit_vhost = self.parser.get('RABBIT','vhost')
+        self.rabbit_timeout = self.parser.getint('RABBIT','timeout')
+        
+        self.in_queue = self.parser.get('RABBIT','in_queue')
+        self.out_queue = self.parser.get('RABBIT','out_queue')
