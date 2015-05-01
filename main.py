@@ -1,22 +1,20 @@
 import logging
 import urllib
-import urllib2
 import json
 import time
-import socket
 from Queue import PriorityQueue
 import threading
 from bs4 import BeautifulSoup
-import re
 import traceback
 import requests
 import signal
 import sys
-import socket
 
+import fetcher
 import helper
-import rabbitmq# Requests is a very loud module, so disable the logging
+import rabbitcoat
 
+# Requests is a very loud module, so disable the logging
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("pika").setLevel(logging.WARNING)
 
@@ -33,94 +31,118 @@ BAD_DOMAINS = ['www.google.cn',]
 
 SUBNET = '10.0.0.'
 
-def FetchData(logger, url): #, g_match):
-    ''' Fetch a given url and try to find the google matches in it '''     
-    #patt = re.compile('\.+ ')
-    #matches = patt.split(g_match)
-            
-    try:
-        data = urllib2.urlopen(url, timeout=2).read()
-    except urllib2.HTTPError, e:
-        # This can happen due to not being authorized, or the site being down
-        logger.error("Couldn't fetch page: %s" %url)
-        return ''
-    except urllib2.URLError, e:
-        logger.error("URLError: %s" %url)
-        return ''
-    except socket.timeout, e:
-        print 'timed out %s' %url
-        return ''
-        
-    '''   
-    soup = BeautifulSoup(data)        
-    results = []
-
-    for match in matches:
-        match = match.strip()
-        if match == "":
-            continue
-        
-        res = soup.find(text=re.compile(re.escape(match)))
-        if res != None:
-            final_res = res.parent.get_text().strip()
-            results.append((match, final_res))
-    '''
+#TODO: Delete this?
+OUTPUT_DIR = 'output\\'
+def saveOut(name, cont):
+    open(OUTPUT_DIR + name, 'w').write(cont.encode('utf8'))    
+def printOut(sf, *elems):
     
-    return data
-
+    params = []
+    for elem in elems:
+        str_elem = elem
+        if type(str_elem) != unicode:
+            str_elem = str(elem)
+        if type(str_elem) == unicode:
+            params.append(str_elem.encode('utf8'))
+        else:
+            params.append(str_elem)
+            
+    print sf %tuple(params)
+    
 class GoogleParser(object):
     
-    def __init__(self, logger):
+    source_format = 'google %s'
+    
+    def __init__(self, logger, fetcher):
         self.logger = logger
+        self.fetcher = fetcher
+    
+    def __getUrl(self, g_result, link):
+        # Some domains use it I guess
+        if link.has_attr('data-href'):
+            url = link['data-href']
+        else:
+            url = link['href']
+        # link to another search, images or something
+        if url.find('/search') == 0:                    
+            return None
         
-    def Parse(self, data):
+        return url
+    
+    def __getTitle(self, g_result, link):
+        try:
+            span = link.span
+            if span != None:
+                title = span.get_text()
+            else:
+                title = link.get_text()
+        # These are elements that we don't need
+        except (Exception, AttributeError) as e:
+            self.logger.error("Can't find text: \n%s\n%s" %(g_result, link))
+            return None
+        
+        return title
+    
+    def __getMatch(self, g_result, link):
+        try:
+            st = g_result.find(class_='st')
+            inner_spans = st.find_all('span')
+            if len(inner_spans) == 0:
+                match = st.get_text()
+            else:
+                match = inner_spans[-1].get_text()
+            match = match.replace(u'\xa0', u'').strip('.').strip()
+        except (Exception, AttributeError) as e:
+            self.logger.error("Can't find match: \n%s" %g_result)
+            return None
+            
+        return match
+    
+    def __fetchData(self, search, url, match):
+        data = self.fetcher.Fetch(search, url, match)
+        # If fetching/matching failed, return None. The user will have to check it out himself.
+        if data == None:
+            return None
+        #TODO: return pygres.SaveArticle(data)
+        return 1
+    
+    def Parse(self, source, query, data):
         results = []
         soup = BeautifulSoup(data)
         
         for g_result in soup.find_all(class_='g'):
             #raw_input('Press any key...')
-            #os.system('cls')            
+            #os.system('cls')
             try:
                 link = g_result.a
-                # Some domains use it I guess
-                if link.has_attr('data-href'):
-                    url = g_result.a['data-href']
-                else:
-                    url = g_result.a['href']
-                # link to another search, images or somethin
-                if url.find('/search') == 0:                    
+                url = self.__getUrl(g_result, link)
+                if url == None:
                     continue
-                try:
-                    span = link.span
-                    if span != None:
-                        title = span.get_text()
-                    else:
-                        title = link.get_text()
-                # These are elements that we don't need
-                except (Exception, AttributeError) as e:
-                    self.logger.error("Can't find text: \n%s\n%s" %(g_result, link))
+                title = self.__getTitle(g_result, link)
+                if title == None:
                     continue
-                try:
-                    st = g_result.find(class_='st')
-                    inner_spans = st.find_all('span')
-                    if len(inner_spans) == 0:
-                        match = st.get_text()
-                    else:
-                        match = inner_spans[-1].get_text()
-                    match = match.replace(u'\xa0', u'').strip('.').strip()
-                except (Exception, AttributeError) as e:
-                    self.logger.error("Can't find match: \n%s" %g_result)
+                match = self.__getMatch(g_result, link)
+                if match == None:
                     continue
                 
-                result = {'url': url,
+                printOut('\n\nQuery: %s, Title: %s', query, title)
+                id = self.__fetchData(query.search, url, match)
+                result = {'source': self.source_format %source,
+                          'query': str(query),
+                          'url': url,
                           'title': title,
-                          'match': match,}
+                          'match': match,
+                          'id': id}
+                          
+                
                 #print 'Results: %s' %result
                 results.append(result)
                 
             except Exception, e:
-                print 'OUter exception..'
+                #TODO: Remove this
+                print 'Outer exception..'
                 self.logger.exception(traceback.format_exc())
+                raw_input()
         
         return results    
 
@@ -140,7 +162,7 @@ class Query(object):
     
 class SearchHandler(object):
     ''' A handler for a search. Will save all the results of a given search '''
-    def __init__(self, logger, filename, query_count, sender):
+    def __init__(self, logger, filename, query_count, sender, corr_id):
         print 'start init'
         self.sender = sender
         self.logger = logger
@@ -148,6 +170,7 @@ class SearchHandler(object):
         self.query_count = query_count
         self.filename = filename
         self.results = {}
+        self.corr_id = corr_id
         
         self.lock = threading.Lock()
         
@@ -172,7 +195,7 @@ class SearchHandler(object):
     
     def SendResults(self):
                 
-        self.sender.Send(json.dumps(self.results))
+        self.sender.Send(json.dumps(self.results), corr_id = corr_id)
     
     def SaveResults(self):
         f = open(self.filename, 'w')
@@ -205,7 +228,6 @@ class NormalQuery(threading.Thread):
         '''
         In case of errors, the query will be returned to the queue, and the thread will be terminated / paused for a while
         '''
-        
         last_query = 0
         
         while True:
@@ -231,7 +253,7 @@ class NormalQuery(threading.Thread):
                             self.logger.error('Unknown error %s: %s, terminating' %(search_results.status_code, search_results.reason))
                             return
                     
-                    results.extend(self.parser.Parse(search_results.text))
+                    results.extend(self.parser.Parse(self.site, query, search_results.text))
                     #results.extend(('weehee',))
                     
                     # sleep the remaining time before the next query
@@ -248,19 +270,15 @@ class NormalQuery(threading.Thread):
                 
 class GoogleSearcher(object):
     
-    def __init__(self, logger):
-        self.config = helper.Config()
+    def __init__(self, logger, config='settings.ini', rabbit_config = 'settings.ini'):
+        self.config = helper.GoogleConfig(config)
         self.logger = logger
         
-        self.parser = GoogleParser(self.logger)
+        self.fetcher = fetcher.GoogleFetcher(self.logger)
+        self.parser = GoogleParser(self.logger, self.fetcher)
         
         # Querying threads
         self.queries = PriorityQueue()
-        
-        #self.normal_thread = threading.Thread(target=self.NormalQuery)
-        
-        #self.ajax_thread = AjaxQuery(self.logger, self.config, self.queries)
-        #self.ajax_thread.start()
         
         thread_count = min(self.config.max_threads, len(GOOGLE_DOMAINS))
         
@@ -272,45 +290,39 @@ class GoogleSearcher(object):
             self.threads.append(thread)
             
         # Initialize rabbit objects to transfer information
-        self.sender = rabbitmq.RabbitSender(self.config, self.config.out_queue)
-        
-        self.receiver = rabbitmq.RabbitReceiver(self.config, self.config.in_queue, self.RabbitCallback)
+        self.sender = rabbitcoat.RabbitSender(rabbit_config, self.config.out_queue)
+    
+        # We're still using a receiver and not the responder because it's asynchronous
+        self.receiver = rabbitcoat.RabbitReceiver(rabbit_config, self.config.in_queue, self.__rabbitCallback)
         self.receiver.start()
-        
-        '''
-        self.normal_thread = NormalQuery(self.logger, self.config, self.queries, 'www.google.com', self.parser)
-        self.normal_thread.start()
-        
-        self.normal_thread2 = NormalQuery(self.logger, self.config, self.queries, 'www.google.ca', self.parser)
-        self.normal_thread2.start()
-        '''
     
     def Backup(self):
         '''
         This method should be called if the program is shutting down, return all the search requests to the queue
         '''
-        backer = rabbitmq.RabbitSender(self.config, self.config.in_queue)
-        # Do the backup here..
-        
-    def RabbitCallback(self, ch, method, properties, body):
+        backer = rabbitcoat.RabbitSender(self.config, self.config.in_queue)
+        #TODO: the backup here..
+    
+    def __rabbitCallback(self, ch, method, properties, body):
         print 'data', ch, method, properties, body
         print "Receiever: Received message with:"
-        #if (properties.corr_id is None)):
-        #    print "\t correlation ID: %s" % properties.corr_id
         if (not (body is None)):
             print "\t body: %r" % (body)
-            self.Search(json.loads(body))
+            self.Search(json.loads(body), properties.correlation_id)
         else:
             print "\t an empty body"
         ch.basic_ack(delivery_tag = method.delivery_tag)
     
-    def Search(self, parameters):
+    def Search(self, parameters, corr_id):
+        '''
+        @param corr_id: The correlation ID of the search.
+        '''
         # Create a handler for this search
-        handler = SearchHandler(self.logger, 'output/%s.txt' %parameters['name'], len(parameters) * len(self.config.hot_words), self.sender)
+        handler = SearchHandler(self.logger, 'output/%s.txt' %parameters['name'], len(parameters) * len(self.config.hot_words), self.sender, corr_id=corr_id)
         for key in parameters:
             print key
             for hot_word in self.config.hot_words:
-                query = Query(parameters[key], hot_word, handler)
+                query = Query(parameters[key].lower(), hot_word, handler)
                 self.queries.put((time.time(), query))
 
 def sig_handler(signum = None, frame = None):

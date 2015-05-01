@@ -24,8 +24,8 @@ def getLogger(level, file_level = logging.DEBUG, name='pygoogle', max_size = MAX
     logger.addHandler(console_handler)
     
     return logger
-        
-class Config(object):
+
+class GoogleConfig(object):
     '''Read a user configuration file, store values in instance variables'''
 
     def __init__(self,f='settings.ini'):
@@ -33,7 +33,6 @@ class Config(object):
         self.parser = SafeConfigParser()
         self.parser.read(self.file)
         
-        self.updateRabbit()
         self.updateAll()        
         
     def updateAll(self):
@@ -54,12 +53,6 @@ class Config(object):
         self.result_size = self.parser.getint('QUERY', 'result_size')
         self.sleep_time = self.parser.getint('QUERY', 'sleep_time')
         
-    def updateRabbit(self):
-        self.rabbit_server = self.parser.get('RABBIT','server')
-        self.rabbit_user = self.parser.get('RABBIT','user')
-        self.rabbit_password = self.parser.get('RABBIT','password')
-        self.rabbit_vhost = self.parser.get('RABBIT','vhost')
-        self.rabbit_timeout = self.parser.getint('RABBIT','timeout')
+        self.in_queue = self.parser.get('RABBITMQ','in_queue')
+        self.out_queue = self.parser.get('RABBITMQ','out_queue')
         
-        self.in_queue = self.parser.get('RABBIT','in_queue')
-        self.out_queue = self.parser.get('RABBIT','out_queue')
