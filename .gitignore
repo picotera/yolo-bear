@@ -1,0 +1,4 @@
+*.pyc
+google.log
+tests/
+output/
