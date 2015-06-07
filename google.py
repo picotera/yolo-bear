@@ -120,7 +120,6 @@ class NormalQuerier(threading.Thread):
                         time.sleep(sleep_time)
                     
                 query.SendResults(results)
-                self.query_queue.task_done()
             except Exception, e:
                 self.logger.exception('Exception in thread %s' %self.name)
                 self.query_queue.put((q_time, query))
@@ -128,14 +127,14 @@ class NormalQuerier(threading.Thread):
                 
 class GoogleSearcher(object):
     
+    # Parameters used for the search
+    relevant_params = (NAME_PARAM,)
+        
     def __init__(self, config='conf/google.conf', rabbit_config='conf/rabbitcoat.conf', pygres_config='conf/pygres.conf'):
         self.config = configs.GoogleConfig(config)
         self.logger = getLogger('google')
         
         self.logger.info('Initializing google bot')
-        
-        #self.db_articles = None
-        self.db_articles = pygres.PostgresArticles(self.logger, pygres_config)
 
         self.parser = parsers.GoogleParser(self.logger)
         
@@ -155,7 +154,7 @@ class GoogleSearcher(object):
         self.fetcher_queue = PriorityQueue()
         self.fetchers = []
         for i in xrange(self.config.fetcher_count):
-            thread = fetchers.BasicFetcher(self.logger, self.fetcher_queue)
+            thread = fetchers.BasicFetcher(self.logger, self.fetcher_queue, pygres_config)
             thread.name = 'Fetcher %s' %i
             thread.start()
             self.fetchers.append(thread)
@@ -184,16 +183,21 @@ class GoogleSearcher(object):
         '''
         @param corr_id: The correlation ID of the search.
         '''
+        used_params = []
         # Create a handler for this search
+        for param in self.relevant_params:
+            value = parameters.get(param)
+            if not value:
+                continue
+            used_params.append(value)
         
-        #results_count = len(parameters) * len(self.config.hot_words)
-        results_count = len(self.config.hot_words)
-        handler = handlers.SearchHandler(self.logger, self.db_articles, self.config.blacklist, self.sender, self.fetcher_queue, corr_id, results_count)
-        #TODO: for key in parameters:
-        key = NAME_PARAM
-        for hot_word in self.config.hot_words:
-            query = Query(parameters[key].lower(), hot_word, handler)
-            self.query_queue.put((time.time(), query))
+        results_count = len(used_params) * len(self.config.hot_words)
+        handler = handlers.SearchHandler(self.logger, parameters, self.config.blacklist, self.sender, self.fetcher_queue, corr_id, results_count)
+
+        for value in used_params:
+            for hot_word in self.config.hot_words:
+                query = Query(value.lower(), hot_word, handler)
+                self.query_queue.put((time.time(), query))
     
 def main():
     searcher = GoogleSearcher()

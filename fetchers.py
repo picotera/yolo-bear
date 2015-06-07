@@ -6,13 +6,13 @@ import threading
 from bs4 import BeautifulSoup
 from Queue import PriorityQueue
 import time
-import requests
+import pygres
 
-from helper import GENERIC_HEADERS
+from helper import GENERIC_HEADERS, SearchEngines
 
 TIMEOUT = 2
 # How many retries each link gets
-MAX_RETRIES = 3
+MAX_RETRIES = 2
 
 OUTPUT_DIR = 'output/'
 def saveOut(name, cont):
@@ -55,16 +55,17 @@ class FetchRequest(object):
         self.retries = 0
     
 class BasicFetcher(threading.Thread):
-    def __init__(self, logger, fetcher_queue):
+    def __init__(self, logger, fetcher_queue, pygres_config):
         threading.Thread.__init__(self)
         
         self.logger = logger
         self.fetcher_queue = fetcher_queue
         
+        self.db_articles = pygres.PostgresArticles(self.logger, pygres_config)
+        
         # Sites are more likely to answer if we mimic a browser
-        self.s = requests.Session()
-        self.s.verify = False
-        self.s.headers = GENERIC_HEADERS
+        self.opener = urllib2.build_opener()
+        self.opener.addheaders = zip(GENERIC_HEADERS.keys(), GENERIC_HEADERS.values())
     
     def AddRequest(self, request):
         if type(request) != FetchRequest:
@@ -88,9 +89,10 @@ class BasicFetcher(threading.Thread):
 
     def __fetchUrl(self, url):
         # run() should catch the exceptions and handle them
-        self.logger.debug('Fetching page: %s' %url)
-        res = self.s.get(url, timeout=TIMEOUT)
-        return res.text, res.encoding
+        self.logger.debug('%s fetching page: %s' %(self.name, url))
+        res = self.opener.open(url, timeout=TIMEOUT)
+        data = res.read()
+        return data
         '''
         except urllib2.HTTPError, e:
             # This can happen due to not being authorized, or the site being down
@@ -103,11 +105,17 @@ class BasicFetcher(threading.Thread):
             self.logger.error("Timed out: %s" %url)
             return None
         '''
-            
+    def __saveResult(self, data):
+        if not data:
+            return None
+        id = self.db_articles.AddArticle(data, SearchEngines.GOOGLE)
+        return id
+        
     def _fetch(self, queries, url, matches):
         # Basic fetcher just gets the URL
-        data, encoding = self.__fetchUrl(url)
-        return data.encode(encoding)
+        data = self.__fetchUrl(url)
+        id = self.__saveResult(data)
+        return id
     
 class GoogleFetcher(BasicFetcher):
 
