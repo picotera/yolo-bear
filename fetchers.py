@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from Queue import PriorityQueue
 import time
 import pygres
+import pyteaser
 
 from helper import GENERIC_HEADERS, SearchEngines
 
@@ -62,10 +63,6 @@ class BasicFetcher(threading.Thread):
         self.fetcher_queue = fetcher_queue
         
         self.db_articles = pygres.PostgresArticles(self.logger, pygres_config)
-        
-        # Sites are more likely to answer if we mimic a browser
-        self.opener = urllib2.build_opener()
-        self.opener.addheaders = zip(GENERIC_HEADERS.keys(), GENERIC_HEADERS.values())
     
     def AddRequest(self, request):
         if type(request) != FetchRequest:
@@ -90,21 +87,9 @@ class BasicFetcher(threading.Thread):
     def __fetchUrl(self, url):
         # run() should catch the exceptions and handle them
         self.logger.debug('%s fetching page: %s' %(self.name, url))
-        res = self.opener.open(url, timeout=TIMEOUT)
-        data = res.read()
-        return data
-        '''
-        except urllib2.HTTPError, e:
-            # This can happen due to not being authorized, or the site being down
-            self.logger.error("Couldn't fetch page: %s" %url)
-            return None
-        except urllib2.URLError, e:
-            self.logger.error("URLError: %s" %url)
-            return None
-        except socket.timeout, e:
-            self.logger.error("Timed out: %s" %url)
-            return None
-        '''
+        res = pyteaser.SummarizeUrl(url) # TODO: use GENERIC_HEADERS and TIMEOUT
+        return " ".join(res)
+
     def __saveResult(self, data):
         if not data:
             return None
